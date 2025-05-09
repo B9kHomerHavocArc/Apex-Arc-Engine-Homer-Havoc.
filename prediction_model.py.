@@ -1,0 +1,50 @@
+import logging
+import pandas as pd
+from overlays.weather import get_weather_score
+from overlays.park import get_park_factor
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def predict_hr_probabilities(lineup, statcast_data, bvp_data, venue='Sutter Health Park'):
+    """
+    Calculate HR probabilities for players in the lineup.
+    Placeholder: Replace with logistic regression or neural network.
+    """
+    try:
+        probabilities = {}
+        weather = get_weather_score(venue)
+        park = get_park_factor(venue)
+        
+        for player in lineup:
+            # Base probability based on player (placeholder)
+            base_prob = {
+                'Aaron Judge': 0.22,
+                'Giancarlo Stanton': 0.20,
+                'Cody Bellinger': 0.15,
+                'Juan Soto': 0.18
+            }.get(player, 0.10)  # Default 10% for others
+            
+            # Statcast adjustments
+            statcast = statcast_data.get(player, pd.DataFrame())
+            barrel_adj = 1.2 if not statcast.empty and statcast['barrel'].mean() > 0.10 else 1.0
+            xwoba_adj = 1.15 if not statcast.empty and statcast['xwoba'].mean() > 0.350 else 1.0
+            
+            # BvP adjustments
+            bvp = bvp_data.get(player, {'at_bats': 0, 'hr': 0})
+            bvp_adj = 1.3 if bvp['at_bats'] > 5 and bvp['hr'] / bvp['at_bats'] > 0.1 else 1.0
+            
+            # Weather and park adjustments
+            weather_adj = 1 + (weather['score'] / 100 * 0.015)  # e.g., score 80 = +1.2%
+            park_adj = park['hr_factor']  # e.g., 1.02 for Yankee Stadium
+            
+            # Combine adjustments
+            prob = base_prob * barrel_adj * xwoba_adj * bvp_adj * weather_adj * park_adj
+            prob = min(prob, 0.5)  # Cap at 50% to avoid unrealistic values
+            probabilities[player] = prob
+            
+            logging.info(f"HR probability for {player}: {prob:.1%}")
+        
+        return probabilities
+    except Exception as e:
+        logging.error(f"Prediction failed: {e}")
+        return {player: 0.10 for player in lineup}  # Fallback: 10% for all
