@@ -1,0 +1,50 @@
+import requests
+from bs4 import BeautifulSoup
+from fake_useragent import UserAgent
+import logging
+from redis import Redis
+import json
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+redis_client = Redis(host='localhost', port=6379, db=0)
+ua = UserAgent()
+
+def scrape_bvp_data(player_name, pitcher_name, date='2025-05-09'):
+    """
+    Scrape batter-versus-pitcher data for a player and pitcher.
+    Placeholder: Returns static data; replace with Baseball-Reference or ESPN scraping.
+    """
+    cache_key = f"bvp:{player_name}:{pitcher_name}:{date}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        return json.loads(cached)
+    
+    try:
+        # Placeholder: Static BvP data for key players
+        bvp_data = {
+            'Aaron Judge': {'at_bats': 8, 'hits': 2, 'hr': 1, 'avg': 0.250},
+            'Giancarlo Stanton': {'at_bats': 10, 'hits': 3, 'hr': 1, 'avg': 0.300},
+            'Cody Bellinger': {'at_bats': 5, 'hits': 1, 'hr': 0, 'avg': 0.200},
+            'Juan Soto': {'at_bats': 7, 'hits': 2, 'hr': 1, 'avg': 0.286}
+        }
+        
+        if player_name in bvp_data:
+            result = bvp_data[player_name]
+            logging.info(f"BvP data for {player_name} vs {pitcher_name}: {result}")
+        else:
+            result = {'at_bats': 0, 'hits': 0, 'hr': 0, 'avg': 0.000}
+            logging.info(f"No BvP data for {player_name} vs {pitcher_name}")
+        
+        # Hypothetical scraping (uncomment and customize for real use)
+        # url = f"https://www.baseball-reference.com/players/{player_id}/bvp.shtml?opponent={pitcher_id}"
+        # headers = {'User-Agent': ua.random}
+        # response = requests.get(url, headers=headers, timeout=10)
+        # soup = BeautifulSoup(response.text, 'html.parser')
+        # table = soup.find('table', class_='bvp-table')
+        # result = {'at_bats': int(table.find('td', class_='ab').text), ...}
+        
+        redis_client.setex(cache_key, 86400, json.dumps(result))  # Cache for 24 hours
+        return result
+    except Exception as e:
+        logging.error(f"Failed to scrape BvP for {player_name} vs {pitcher_name}: {e}")
+        return {'at_bats': 0, 'hits': 0, 'hr': 0, 'avg': 0.000}
