@@ -1,0 +1,9 @@
+streamlit==1.35.0
+mlbstatsapi==1.2.0
+requests==2.31.0
+beautifulsoup4==4.12.3
+fake-useragent==1.5.1
+pybaseball==2.2.7
+redis==5.0.4
+pandas==2.2.2
+apache-airflow==2.9.2
