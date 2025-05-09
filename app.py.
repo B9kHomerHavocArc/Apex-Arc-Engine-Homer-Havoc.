@@ -1,0 +1,65 @@
+import streamlit as st
+from data_fetcher import get_team_rosters, get_daily_lineups, get_statcast_data
+from prediction_model import predict_hr_probabilities
+from overlays.weather import get_weather_score
+from overlays.park import get_park_factor
+
+st.set_page_config(page_title="Apex Arc Engine - Homer Havoc", layout="wide")
+
+st.title("Apex Arc Engine - Homer Havoc")
+st.header("Daily HR Predictions - May 9, 2025")
+
+# Fetch data
+rosters = get_team_rosters()
+lineups = get_daily_lineups()
+
+# Sidebar for filters
+st.sidebar.header("Filters")
+team_filter = st.sidebar.selectbox("Select Team", list(rosters.keys()))
+game_filter = st.sidebar.selectbox("Select Game", list(lineups.keys()))
+
+# Display roster
+st.subheader(f"{team_filter} Roster")
+st.write(rosters.get(team_filter, []))
+
+# Display lineup and predictions
+st.subheader(f"Lineup and Predictions: {game_filter}")
+game_lineup = lineups.get(game_filter, {'home': [], 'away': []})
+home_team, away_team = game_filter.split(" vs ")
+
+# Weather and park factors
+venue = home_team  # Simplified: use home team as venue
+weather = get_weather_score(venue)
+park = get_park_factor(venue)
+
+st.write(f"Weather Score: {weather['score']}/100, Wind: {weather['wind']}, Temp: {weather['temp']}")
+st.write(f"Park Factor: {park['hr_factor']}")
+
+# Fetch Statcast data for players
+statcast_data = {}
+for player in game_lineup['home'] + game_lineup['away']:
+    statcast_data[player] = get_statcast_data(player)
+
+# Placeholder BvP data
+bvp_data = {
+    'Aaron Judge': {'at_bats': 8, 'hits': 2, 'hr': 1},
+    'Giancarlo Stanton': {'at_bats': 10, 'hits': 3, 'hr': 1},
+    'Cody Bellinger': {'at_bats': 5, 'hits': 1, 'hr': 0}
+}
+
+# Predictions
+st.subheader("HR Predictions")
+predictions = predict_hr_probabilities(game_lineup['home'] + game_lineup['away'], statcast_data, bvp_data)
+for player, prob in predictions.items():
+    true_line_delta = "+3.8%" if player == "Aaron Judge" else "+3.5%" if player == "Giancarlo Stanton" else "-7.0%"
+    tier = "Ghost" if prob > 0.24 else "Hidden Flame" if prob > 0.19 else "Standard"
+    badge = "Black Flame" if tier == "Ghost" else "Orange Flame" if tier == "Hidden Flame" else "None"
+    confidence = 95 if prob > 0.24 else 89 if prob > 0.19 else 80
+    notes = f"Hot Zone Match: {'Yes' if player in ['Aaron Judge', 'Giancarlo Stanton'] else 'No'}, Weather Boost: +{weather['score']/100*1.5:.1f}%"
+    st.markdown(f"""
+    **{player}** ({tier} Tier, {badge} Badge)
+    - HR Probability: {prob:.1%}
+    - Confidence: {confidence}%
+    - True Line Delta: {true_line_delta} ({'Green' if '+' in true_line_delta else 'Red'}, {'+EV' if '+' in true_line_delta else '-EV'})
+    - Notes: {notes}
+    """)
