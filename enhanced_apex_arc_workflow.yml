@@ -1,0 +1,51 @@
+
+name: Apex Arc Engine – Build and Run Daily
+
+on:
+  schedule:
+    - cron: "0 14 * * *"  # Runs daily at 2 PM UTC (10 AM ET)
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/apex-arc-engine-homer-havoc:main
+
+      - name: Run Apex Arc Engine container
+        run: |
+          docker run --rm             -v ${{ github.workspace }}/output:/app/output             -e INPUT_FILE=data/Top_25_HR_Projections__Full_Apex_Stack_.csv             -e OUTPUT_DIR=output             ghcr.io/${{ github.repository_owner }}/apex-arc-engine-homer-havoc:main
+
+      - name: Upload Daily Output (Logs, Stacks, Narratives)
+        uses: actions/upload-artifact@v4
+        with:
+          name: apex-arc-output
+          path: output/
+
+      # Optional: Add Discord webhook notification here
