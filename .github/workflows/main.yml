@@ -1,0 +1,125 @@
+name: Apex Arc Engine Workflow
+
+# Trigger the workflow daily at 12:00 PM UTC or manually
+on:
+  schedule:
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+
+# Environment variables and secrets
+env:
+  MLB_API_DATE: '2025-05-14' # Current date, adjustable via workflow dispatch
+  WEATHER_CITY: 'Denver' # Default city, can be adjusted per game
+  OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+  DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+# Permissions for committing and pushing
+permissions:
+  contents: write
+
+# Define jobs
+jobs:
+  # Job 1: Collect Real-Time Data
+  data-collection:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas
+
+      - name: Fetch MLB Statcast Data
+        run: python CODINGrealtime_data_pipeline.py --fetch-mlb --date ${{ env.MLB_API_DATE }}
+
+      - name: Fetch Weather Data
+        run: python CODINGrealtime_data_pipeline.py --fetch-weather --city ${{ env.WEATHER_CITY }} --api-key ${{ env.OPENWEATHER_API_KEY }}
+
+      - name: Save Data Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-data
+          path: data/output/
+
+  # Job 2: Run Simulation and Generate Outputs
+  simulation:
+    needs: data-collection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pandas
+
+      - name: Download Data Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: raw-data
+          path: data/output/
+
+      - name: Run Linting
+        run: |
+          pip install flake8
+          flake8 . --max-line-length=88 --extend-ignore=E203 || echo "Linting warnings ignored"
+
+      - name: Run Simulation
+        run: python run_daily_simulation.py --date ${{ env.MLB_API_DATE }}
+
+      - name: Verify Outputs
+        run: |
+          [ -s data/output/parlay_stacks_may3.csv ] && echo "Parlay file generated" || exit 1
+          [ -s data/output/diagnostic_overlay.csv ] && echo "Diagnostic file generated" || exit 1
+
+  # Job 3: Commit Outputs and Post to Discord
+  deploy-outputs:
+    needs: simulation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Download Simulation Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: raw-data
+          path: data/output/
+
+      - name: Commit and Push Outputs
+        run: |
+          git config user.name "ApexBot"
+          git config user.email "bot@apex.com"
+          git add data/output/parlay_stacks_may3.csv data/output/diagnostic_overlay.csv
+          git commit -m "Auto update: Daily simulation outputs for ${{ env.MLB_API_DATE }}" || echo "No changes to commit"
+          git push
+
+      - name: Post to Discord via ShadowBot
+        run: python shadowbot_push.py --webhook ${{ env.DISCORD_WEBHOOK }}
+
+# Optional: Add a failure notification job
+  notify-failure:
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Failure
+        run: echo "Apex Arc Engine workflow failed on ${{ env.MLB_API_DATE }}. Check logs."
